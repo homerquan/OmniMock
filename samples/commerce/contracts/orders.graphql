@@ -1,0 +1,17 @@
+schema {
+  query: Query
+  mutation: Mutation
+}
+type Query {
+  order(id: ID!): Order
+}
+type Mutation {
+  createOrder(sku: String!, quantity: Int!): Order!
+}
+type Order {
+  id: ID!
+  sku: String!
+  quantity: Int!
+  status: String!
+  createdAt: String!
+}

@@ -1,0 +1,4 @@
+{
+  "orders": [],
+  "description": "Rules create orders deterministically; this fixture is the empty baseline."
+}

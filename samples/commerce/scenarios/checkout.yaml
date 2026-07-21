@@ -1,0 +1,45 @@
+schema_version: "1"
+id: checkout
+version: "1.0.0"
+seed: 84172
+initial_state:
+  inventory:
+    SKU-RED:
+      available: 100
+    SKU-BLUE:
+      available: 50
+  collections:
+    orders: {}
+rules:
+  - id: create-order
+    priority: 100
+    when:
+      operation: orders.create
+    validate:
+      - expression: input.quantity >= 1
+        message: quantity must be positive
+      - expression: state.inventory[input.sku].available >= input.quantity
+        message: insufficient inventory
+    mutate:
+      - decrement:
+          path: inventory.${input.sku}.available
+          by: ${input.quantity}
+      - put:
+          collection: orders
+          key: ${uuid.deterministic('order', request.request_id)}
+          value:
+            id: ${mutation.key}
+            sku: ${input.sku}
+            quantity: ${input.quantity}
+            status: accepted
+            created_at: ${clock.now}
+    emit:
+      - channel: order-events
+        type: order.created
+        payload: ${mutation.value}
+      - filesystem:
+          path: orders/${mutation.key}.json
+          content: ${json.encode(mutation.value)}
+    respond:
+      status: 201
+      body: ${mutation.value}

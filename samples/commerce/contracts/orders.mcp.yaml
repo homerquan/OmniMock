@@ -1,0 +1,12 @@
+mcp:
+  version: "2025-11-25"
+  server: commerce-tools
+tools:
+  - name: create_order
+    description: Create an order
+    inputSchema:
+      type: object
+      required: [sku, quantity]
+resources:
+  - uriTemplate: order://{id}
+    name: Order resource

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnimock.dev/schemas/model-profile.schema.json",
+  "type": "object",
+  "required": ["schema_version", "id", "provider", "model", "runtime", "privacy"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"},
+    "provider": {"type": "object", "required": ["id", "adapter"]},
+    "model": {"type": "object", "required": ["id", "capabilities"]},
+    "runtime": {"type": "object"},
+    "privacy": {"type": "object", "required": ["allow_payload_classes", "deny_payload_classes"]}
+  },
+  "additionalProperties": false
+}

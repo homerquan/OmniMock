@@ -1,0 +1,3 @@
+schema_version: "1"
+default_action: redact
+fields: [authorization, api_key, password, secret, token]

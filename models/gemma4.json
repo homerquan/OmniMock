@@ -1,0 +1,19 @@
+{
+  "$schema": "../schemas/model-profile.schema.json",
+  "schema_version": "1",
+  "id": "gemma4-local",
+  "provider": {
+    "id": "ollama",
+    "adapter": "openai_compatible",
+    "display_name": "Ollama",
+    "options": {"base_url": "http://127.0.0.1:11434/v1"}
+  },
+  "model": {
+    "id": "gemma4:latest",
+    "display_name": "Gemma local",
+    "capabilities": {"structured_output": true, "tools": true, "streaming": true, "reasoning": false},
+    "request_defaults": {"temperature": 0, "max_output_tokens": 4096}
+  },
+  "runtime": {"timeout_seconds": 120, "connect_timeout_seconds": 10, "max_retries": 1, "max_concurrency": 2, "rate_limit_rpm": 30},
+  "privacy": {"allow_payload_classes": ["synthetic", "public", "redacted"], "deny_payload_classes": ["secret", "credential", "production_personal_data"]}
+}

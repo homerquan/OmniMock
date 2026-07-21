@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnimock.dev/schemas/scenario.schema.json",
+  "type": "object",
+  "required": ["schema_version", "id", "version", "seed", "initial_state", "rules"],
+  "properties": {"schema_version": {"const": "1"}, "id": {"type": "string"}, "version": {"type": "string"}, "seed": {"type": "integer"}, "initial_state": {"type": "object"}, "rules": {"type": "array"}},
+  "additionalProperties": false
+}

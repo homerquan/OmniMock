@@ -1,0 +1,25 @@
+asyncapi: 3.0.0
+info:
+  title: Commerce Order Events
+  version: 1.0.0
+channels:
+  order-events:
+    address: order-events
+    messages:
+      orderCreated:
+        payload:
+          $ref: '#/components/schemas/OrderEvent'
+operations:
+  publishOrderCreated:
+    action: send
+    channel:
+      $ref: '#/channels/order-events'
+components:
+  schemas:
+    OrderEvent:
+      type: object
+      required: [id, sku, quantity]
+      properties:
+        id: {type: string}
+        sku: {type: string}
+        quantity: {type: integer}

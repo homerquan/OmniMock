@@ -1,0 +1,5 @@
+schema_version: "1"
+format: json
+level: INFO
+payload_logging: metadata_only
+redact: [authorization, cookie, api_key, password, token]

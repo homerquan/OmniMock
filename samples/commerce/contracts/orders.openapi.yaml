@@ -1,0 +1,22 @@
+openapi: 3.1.0
+info:
+  title: Commerce Orders API
+  version: 1.0.0
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      responses:
+        '201':
+          description: Order created
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      responses:
+        '200':
+          description: Order found
+components:
+  schemas:
+    Order:
+      type: object
+      required: [id, sku, quantity, status, created_at]

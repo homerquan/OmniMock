@@ -1,0 +1,17 @@
+mcp:
+  version: "2025-11-25"
+  server: commerce-tools
+tools:
+  - name: create_order
+    description: Create an order in the commerce scenario
+    inputSchema:
+      type: object
+      required: [sku, quantity]
+  - name: find_order
+    description: Find an order by identifier
+    inputSchema:
+      type: object
+      required: [id]
+resources:
+  - uriTemplate: order://{id}
+    name: Order resource

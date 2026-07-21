@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnimock.dev/schemas/plugin-manifest.schema.json",
+  "type": "object",
+  "required": ["schema_version", "id", "version", "service_kinds", "modes"],
+  "properties": {"schema_version": {"const": "1"}, "id": {"type": "string"}, "version": {"type": "string"}, "service_kinds": {"type": "array"}, "modes": {"type": "array"}},
+  "additionalProperties": false
+}

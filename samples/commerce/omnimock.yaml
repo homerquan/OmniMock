@@ -1,0 +1,55 @@
+schema_version: "1"
+project:
+  id: commerce-sample
+  default_scenario: checkout
+  artifact_dir: .omnimock/artifacts
+runtime:
+  host: 127.0.0.1
+  control_port: 7777
+  strict: true
+  seed: 84172
+  generation_mode: materialized
+  outbound_network: deny
+config:
+  model_dir: models
+  scenario_dir: scenarios
+  contract_dir: contracts
+  fixture_dir: fixtures
+state:
+  driver: memory
+  sqlite_path: .omnimock/state.db
+models:
+  routing_file: config/model-routing.yaml
+services:
+  - id: orders-api
+    kind: http
+    plugin: builtin.http
+    mode: native
+    contract: contracts/orders.openapi.yaml
+    state_namespace: commerce
+    listen:
+      port: 8081
+  - id: order-events
+    kind: stream
+    plugin: builtin.stream.sse
+    mode: native
+    contract: contracts/orders.asyncapi.yaml
+    state_namespace: commerce
+    listen:
+      port: 8082
+  - id: order-files
+    kind: filesystem
+    plugin: builtin.filesystem
+    mode: native
+    state_namespace: commerce
+    root: .omnimock/mounts/orders
+    listen:
+      port: 8083
+  - id: order-tools
+    kind: mcp
+    plugin: builtin.mcp
+    mode: native
+    contract: contracts/orders.mcp.yaml
+    state_namespace: commerce
+    listen:
+      port: 8084

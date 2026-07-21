@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnimock.dev/samples/order.schema.json",
+  "type": "object",
+  "required": ["id", "sku", "quantity", "status", "created_at"],
+  "properties": {
+    "id": {"type": "string"},
+    "sku": {"type": "string"},
+    "quantity": {"type": "integer", "minimum": 1},
+    "status": {"const": "accepted"},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

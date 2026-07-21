@@ -1,0 +1,13 @@
+schema_version: "1"
+defaults:
+  profile: disabled
+  generation_mode: materialized
+tasks:
+  fixture_generation:
+    profile: disabled
+    required_capabilities: [structured_output]
+    fallback: fail
+  live_unmatched_request:
+    enabled: false
+    profile: disabled
+    fallback: protocol_error

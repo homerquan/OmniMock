@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "sku", "quantity", "status", "created_at"],
+  "properties": {"id": {"type": "string"}, "sku": {"type": "string"}, "quantity": {"type": "integer"}, "status": {"type": "string"}, "created_at": {"type": "string"}}
+}

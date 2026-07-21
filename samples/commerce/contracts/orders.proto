@@ -1,0 +1,5 @@
+syntax = "proto3";
+package commerce.orders.v1;
+message CreateOrderRequest { string sku = 1; int32 quantity = 2; }
+message Order { string id = 1; string sku = 2; int32 quantity = 3; string status = 4; string created_at = 5; }
+service Orders { rpc CreateOrder(CreateOrderRequest) returns (Order); }
