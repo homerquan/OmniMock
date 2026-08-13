@@ -1,0 +1,42 @@
+schema_version: "1"
+project:
+  id: mirror-neuron-runtime-sample
+  default_scenario: desktop
+  artifact_dir: .omnimock/artifacts
+runtime:
+  host: 127.0.0.1
+  control_port: 0
+  strict: true
+  seed: 20260813
+  clock:
+    mode: logical
+    start: "2026-08-13T12:00:00Z"
+  generation_mode: materialized
+  outbound_network: deny
+config:
+  model_dir: models
+  scenario_dir: scenarios
+  contract_dir: .
+  fixture_dir: .
+state:
+  driver: memory
+  sqlite_path: .omnimock/state.json
+models:
+  routing_file: config/model-routing.yaml
+services:
+  - id: mirror-neuron-api
+    kind: http
+    plugin: builtin.http
+    mode: native
+    contract: manifest.json
+    behavior: manifest.json
+    state_namespace: mirror-neuron
+    listen:
+      port: 54001
+  - id: mirror-neuron-cli
+    kind: cli
+    plugin: builtin.cli
+    mode: native
+    contract: cli-manifest.json
+    behavior: cli-manifest.json
+    state_namespace: mirror-neuron

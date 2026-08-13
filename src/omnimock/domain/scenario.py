@@ -18,6 +18,7 @@ class ServiceDefinition:
     listen: Mapping[str, JsonValue] = field(default_factory=dict)
     root: str | None = None
     contract: str | None = None
+    behavior: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

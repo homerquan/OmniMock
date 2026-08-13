@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnimock.dev/schemas/http-manifest.schema.json",
+  "title": "OmniMock HTTP Manifest",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "base_paths", "routes"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "1"},
+    "kind": {"const": "http"},
+    "id": {"type": "string", "minLength": 1},
+    "base_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^$|^/.*[^/]$"}
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_request_body_bytes": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "max_response_body_bytes": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "max_websocket_messages": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "max_websocket_message_bytes": {"type": "integer", "minimum": 1, "maximum": 10000000},
+        "max_websocket_interactions": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "websocket_idle_timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000}
+      },
+      "additionalProperties": false
+    },
+    "cors": {
+      "type": "object",
+      "properties": {
+        "allow_origins": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "allow_headers": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "allow_methods": {"type": "array", "items": {"enum": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]}}
+      },
+      "additionalProperties": false
+    },
+    "routes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "method", "path", "response"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "method": {"enum": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]},
+          "path": {"type": "string", "pattern": "^/"},
+          "response": {
+            "type": "object",
+            "required": ["status", "body"],
+            "properties": {
+              "status": {"type": "integer", "minimum": 100, "maximum": 599},
+              "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+              "content_type": {"type": "string", "minLength": 1},
+              "body": true
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "websockets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "messages"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "pattern": "^/"},
+          "messages": {"type": "array"},
+          "interactions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "match", "messages"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "match": {"type": "object", "minProperties": 1},
+                "messages": {"type": "array"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "on_unmatched": {"type": "array"},
+          "close_after_messages": {"type": "boolean"},
+          "close_code": {"type": "integer", "minimum": 1000, "maximum": 4999},
+          "close_reason": {"type": "string"},
+          "message_interval_ms": {"type": "integer", "minimum": 0, "maximum": 10000}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

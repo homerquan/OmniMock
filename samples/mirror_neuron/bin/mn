@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+sample_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_dir=$(CDPATH= cd -- "$sample_dir/../.." && pwd)
+
+if [ -x "$repository_dir/.venv/bin/python" ]; then
+  python_command="$repository_dir/.venv/bin/python"
+else
+  python_command="python3"
+fi
+
+PYTHONPATH="$repository_dir/src" exec "$python_command" -m omnimock \
+  --root "$sample_dir" mock-cli -- "$@"

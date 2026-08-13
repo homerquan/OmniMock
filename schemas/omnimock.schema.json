@@ -3,6 +3,25 @@
   "$id": "https://omnimock.dev/schemas/omnimock.schema.json",
   "type": "object",
   "required": ["schema_version", "project", "runtime", "config", "state", "models", "services"],
-  "properties": {"schema_version": {"const": "1"}, "project": {"type": "object"}, "runtime": {"type": "object"}, "config": {"type": "object"}, "state": {"type": "object"}, "models": {"type": "object"}, "services": {"type": "array"}},
+  "properties": {
+    "schema_version": {"const": "1"},
+    "project": {"type": "object"},
+    "runtime": {"type": "object"},
+    "config": {"type": "object"},
+    "state": {"type": "object"},
+    "models": {"type": "object"},
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "behavior": {
+            "type": "string",
+            "description": "Project-relative path to a validated protocol behavior manifest."
+          }
+        }
+      }
+    }
+  },
   "additionalProperties": false
 }

@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../schemas/model-profile.schema.json",
+  "schema_version": "1",
+  "id": "disabled",
+  "provider": {"id": "disabled", "adapter": "disabled", "display_name": "Disabled", "options": {}},
+  "model": {
+    "id": "disabled",
+    "display_name": "Disabled",
+    "capabilities": {"structured_output": false, "tools": false, "streaming": false, "reasoning": false},
+    "request_defaults": {"temperature": 0, "max_output_tokens": 1}
+  },
+  "runtime": {
+    "timeout_seconds": 1,
+    "connect_timeout_seconds": 1,
+    "max_retries": 0,
+    "max_concurrency": 1,
+    "rate_limit_rpm": 1,
+    "circuit_breaker": {"failure_threshold": 1, "recovery_seconds": 1}
+  },
+  "privacy": {"allow_payload_classes": ["synthetic"], "deny_payload_classes": ["secret", "credential"]}
+}

@@ -4,28 +4,43 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from omnimock import __version__
 from omnimock.application.runtime import SimulationRuntime
 from omnimock.domain.behavior import BehaviorEngine
+from omnimock.domain.cli import CliManifest
 from omnimock.domain.errors import ConfigurationError, ContractError, ErrorContext, OmniMockError
+from omnimock.domain.http import HttpManifest
 from omnimock.domain.state import InMemoryStateStore
-from omnimock.infrastructure.config.loader import ProjectConfig, load_project, load_scenario, resolved_config
+from omnimock.infrastructure.config.cli_manifest import load_cli_manifest
+from omnimock.infrastructure.config.http_manifest import load_http_manifest
+from omnimock.infrastructure.config.loader import (
+    ProjectConfig,
+    load_project,
+    load_scenario,
+    resolved_config,
+)
 from omnimock.infrastructure.config.yaml_loader import load_document
 from omnimock.infrastructure.models import load_profiles
+from omnimock.simulators.cli import execute_cli
 from omnimock.simulators.http import serve
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="omnimock", description="Deterministic contract-first service simulation")
+    parser = argparse.ArgumentParser(
+        prog="omnimock", description="Deterministic contract-first service simulation"
+    )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--root", type=Path, help="Project directory or path inside a project")
     parser.add_argument("--output", choices=("text", "json"), default="text")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create a starter OmniMock project")
-    sub.add_parser("validate", help="Validate project configuration, models, contracts, and scenario")
+    sub.add_parser(
+        "validate", help="Validate project configuration, models, contracts, and scenario"
+    )
     sub.add_parser("doctor", help="Run local safety and configuration diagnostics")
     for command in ("compile", "generate", "serve", "run"):
         item = sub.add_parser(command)
@@ -35,9 +50,19 @@ def build_parser() -> argparse.ArgumentParser:
             item.add_argument("--operation", default="orders.create")
             item.add_argument("--payload", default="{}")
         if command == "serve":
-            item.add_argument("--duration", type=float, default=0.0, help="Stop after N seconds; useful for smoke tests")
+            item.add_argument(
+                "--duration",
+                type=float,
+                default=0.0,
+                help="Stop after N seconds; useful for smoke tests",
+            )
+    mock_cli = sub.add_parser("mock-cli", help="Execute a manifest-defined mock CLI command")
+    mock_cli.add_argument("--service", default=None)
+    mock_cli.add_argument("arguments", nargs=argparse.REMAINDER)
     inspect = sub.add_parser("inspect")
-    inspect.add_argument("target", choices=("config", "state", "journal", "routes", "models"))
+    inspect.add_argument(
+        "target", choices=("config", "state", "journal", "routes", "commands", "models")
+    )
     state = sub.add_parser("state")
     state_sub = state.add_subparsers(dest="state_command", required=True)
     get = state_sub.add_parser("get")
@@ -83,7 +108,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "serve":
             result = serve_project(args.root, args.scenario, args.duration)
         elif args.command == "run":
-            result = run_request(args.root, args.scenario, args.service, args.operation, args.payload)
+            result = run_request(
+                args.root, args.scenario, args.service, args.operation, args.payload
+            )
+        elif args.command == "mock-cli":
+            return run_cli_mock(args.root, args.service, args.arguments)
         elif args.command == "inspect":
             result = inspect_project(args.root, args.target)
         elif args.command == "state":
@@ -93,14 +122,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "models":
             result = models_command(args.root, args.models_command)
         elif args.command == "plugins":
-            result = {"plugins": [{"id": "builtin.http", "kinds": ["http", "stream", "filesystem", "mcp"], "modes": ["native"]}]}
+            result = {
+                "plugins": [
+                    {
+                        "id": "builtin.http",
+                        "kinds": ["http", "stream", "filesystem", "mcp"],
+                        "modes": ["native"],
+                    },
+                    {"id": "builtin.cli", "kinds": ["cli"], "modes": ["native"]},
+                ]
+            }
         else:
             result = {"status": "ok"}
         _print(result, args.output)
         return 0
     except OmniMockError as exc:
         _print_error(exc, args.output)
-        return 4 if exc.category == "contract" else 3 if exc.category in {"configuration", "validation", "security"} else 5
+        return (
+            4
+            if exc.category == "contract"
+            else 3
+            if exc.category in {"configuration", "validation", "security"}
+            else 5
+        )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         error = ConfigurationError(ErrorContext("OMC-CLI-001", "Command failed", str(exc)))
         _print_error(error, args.output)
@@ -126,52 +170,110 @@ def validate_project(root: Path | None) -> dict[str, Any]:
     scenario = load_scenario(project)
     profiles = load_profiles(project.root / str(project.raw["config"].get("model_dir", "models")))
     contracts = validate_contracts(project)
-    return {"status": "valid", "project": str(project.root), "scenario": scenario.id, "services": len(project.services),
-            "model_profiles": [profile.id for profile in profiles], "contracts": contracts}
+    manifests = _load_http_manifests(project)
+    cli_manifests = _load_cli_manifests(project)
+    return {
+        "status": "valid",
+        "project": str(project.root),
+        "scenario": scenario.id,
+        "services": len(project.services),
+        "model_profiles": [profile.id for profile in profiles],
+        "contracts": contracts,
+        "http_manifests": [
+            {
+                "service_id": service_id,
+                "id": manifest.id,
+                "routes": len(manifest.routes),
+                "websockets": len(manifest.websockets),
+            }
+            for service_id, manifest in manifests.items()
+        ],
+        "cli_manifests": [
+            {"service_id": service_id, "id": manifest.id, "commands": len(manifest.commands)}
+            for service_id, manifest in cli_manifests.items()
+        ],
+    }
 
 
 def doctor(root: Path | None) -> dict[str, Any]:
     project = load_project(root)
-    return {"status": "ok", "checks": {
-        "loopback_binding": project.runtime_host in {"127.0.0.1", "localhost", "::1"},
-        "outbound_network": project.raw["runtime"].get("outbound_network", "deny") == "deny",
-        "model_free_default": project.raw["runtime"].get("generation_mode", "materialized") == "materialized",
-        "state_driver": project.raw["state"].get("driver", "memory"),
-    }}
+    return {
+        "status": "ok",
+        "checks": {
+            "loopback_binding": project.runtime_host in {"127.0.0.1", "localhost", "::1"},
+            "outbound_network": project.raw["runtime"].get("outbound_network", "deny") == "deny",
+            "model_free_default": project.raw["runtime"].get("generation_mode", "materialized")
+            == "materialized",
+            "state_driver": project.raw["state"].get("driver", "memory"),
+        },
+    }
 
 
-def compile_project(project: ProjectConfig, scenario_name: str | None, materialize: bool) -> dict[str, Any]:
+def compile_project(
+    project: ProjectConfig, scenario_name: str | None, materialize: bool
+) -> dict[str, Any]:
     scenario = load_scenario(project, scenario_name)
     contracts = validate_contracts(project)
-    artifact_dir = project.root / str(project.raw["project"].get("artifact_dir", ".omnimock/artifacts"))
+    artifact_dir = project.root / str(
+        project.raw["project"].get("artifact_dir", ".omnimock/artifacts")
+    )
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    artifact = {"artifact_version": "1", "scenario": scenario.id, "scenario_version": scenario.version,
-                "seed": scenario.seed, "rules": [rule.id for rule in scenario.rules], "contracts": contracts,
-                "materialized": materialize, "generation_mode": "build" if materialize else "materialized"}
+    artifact = {
+        "artifact_version": "1",
+        "scenario": scenario.id,
+        "scenario_version": scenario.version,
+        "seed": scenario.seed,
+        "rules": [rule.id for rule in scenario.rules],
+        "contracts": contracts,
+        "materialized": materialize,
+        "generation_mode": "build" if materialize else "materialized",
+    }
     path = artifact_dir / f"{scenario.id}.compiled.json"
     path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return {"status": "materialized" if materialize else "compiled", "artifact": str(path), **artifact}
+    return {
+        "status": "materialized" if materialize else "compiled",
+        "artifact": str(path),
+        **artifact,
+    }
 
 
 def serve_project(root: Path | None, scenario_name: str | None, duration: float) -> dict[str, Any]:
     project = load_project(root)
     scenario = load_scenario(project, scenario_name)
     runtime = SimulationRuntime(project, scenario)
+    manifests = _load_http_manifests(project)
     servers = []
-    for service in project.services:
-        if service.mode != "native":
-            continue
+    http_services = [
+        service
+        for service in project.services
+        if service.mode == "native" and service.kind == "http"
+    ]
+    for service in http_services:
         listen = service.listen
         port = int(listen.get("port", 0)) if isinstance(listen, dict) else 0
         if port == 0:
             port = 8080 + len(servers)
         sandbox = project.root / (service.root or ".omnimock/mounts/default")
         sandbox.mkdir(parents=True, exist_ok=True)
-        servers.append(serve(project, runtime, service.id, project.runtime_host, port, sandbox))
+        servers.append(
+            serve(
+                project,
+                runtime,
+                service.id,
+                project.runtime_host,
+                port,
+                sandbox,
+                manifests.get(service.id),
+            )
+        )
     if not servers:
-        raise ConfigurationError(ErrorContext("OMC-RUNTIME-001", "No native services configured"))
-    bound = [{"service_id": service.id, "address": f"{project.runtime_host}:{server.server_address[1]}"}
-             for service, server in zip((service for service in project.services if service.mode == "native"), servers)]
+        raise ConfigurationError(
+            ErrorContext("OMC-RUNTIME-001", "No native HTTP services configured")
+        )
+    bound = [
+        {"service_id": service.id, "address": f"{project.runtime_host}:{server.server_address[1]}"}
+        for service, server in zip(http_services, servers)
+    ]
     if duration > 0:
         time.sleep(duration)
         for server in servers:
@@ -187,14 +289,49 @@ def serve_project(root: Path | None, scenario_name: str | None, duration: float)
         return {"status": "stopped", "endpoints": bound}
 
 
-def run_request(root: Path | None, scenario_name: str | None, service_id: str | None, operation: str, payload: str) -> Any:
+def run_request(
+    root: Path | None,
+    scenario_name: str | None,
+    service_id: str | None,
+    operation: str,
+    payload: str,
+) -> Any:
     project = load_project(root)
     scenario = load_scenario(project, scenario_name)
     runtime = SimulationRuntime(project, scenario)
-    service = service_id or next((item.id for item in project.services if item.kind == "http"), project.services[0].id)
+    service = service_id or next(
+        (item.id for item in project.services if item.kind == "http"), project.services[0].id
+    )
     result = runtime.request(service, operation, json.loads(payload))
-    return {"outcome": result.outcome, "status": result.metadata.get("status"), "payload": result.payload,
-            "state_version": result.state_version, "provenance": result.provenance.source}
+    return {
+        "outcome": result.outcome,
+        "status": result.metadata.get("status"),
+        "payload": result.payload,
+        "state_version": result.state_version,
+        "provenance": result.provenance.source,
+    }
+
+
+def run_cli_mock(root: Path | None, service_id: str | None, arguments: Sequence[str]) -> int:
+    project = load_project(root)
+    scenario = load_scenario(project)
+    manifests = _load_cli_manifests(project)
+    selected = service_id or next(iter(manifests), None)
+    if selected is None or selected not in manifests:
+        raise ConfigurationError(
+            ErrorContext("OMC-CLI-MANIFEST-023", "No matching native CLI service configured")
+        )
+    argv = list(arguments)
+    if argv and argv[0] == "--":
+        argv.pop(0)
+    result = execute_cli(manifests[selected], argv, scenario.start)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+        sys.stdout.flush()
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+        sys.stderr.flush()
+    return result.exit_code
 
 
 def inspect_project(root: Path | None, target: str) -> Any:
@@ -203,15 +340,80 @@ def inspect_project(root: Path | None, target: str) -> Any:
         return resolved_config(project)
     if target == "models":
         return models_command(root, "list")
+    if target == "commands":
+        commands: list[dict[str, Any]] = []
+        for service_id, manifest in _load_cli_manifests(project).items():
+            for command in manifest.commands:
+                commands.append(
+                    {
+                        "service_id": service_id,
+                        "id": command.id,
+                        "args": list(command.args),
+                        "allow_extra_args": command.allow_extra_args,
+                        "exit_code": command.response.exit_code,
+                    }
+                )
+        return {"commands": commands}
     scenario = load_scenario(project)
     runtime = SimulationRuntime(project, scenario)
     if target == "state":
         return runtime.store.read_state()
     if target == "journal":
-        return [{"sequence": entry.sequence, "request_id": entry.request_id,
-                "operation_id": entry.operation_id, "rule_id": entry.rule_id, "state_version": entry.state_version,
-                "fault": entry.fault} for entry in runtime.store.journal()]
-    return {"routes": [f"{service.id}: {service.kind}" for service in project.services]}
+        return [
+            {
+                "sequence": entry.sequence,
+                "request_id": entry.request_id,
+                "operation_id": entry.operation_id,
+                "rule_id": entry.rule_id,
+                "state_version": entry.state_version,
+                "fault": entry.fault,
+            }
+            for entry in runtime.store.journal()
+        ]
+    manifests = _load_http_manifests(project)
+    routes: list[dict[str, Any]] = []
+    for service in project.services:
+        manifest = manifests.get(service.id)
+        if manifest is None:
+            routes.append({"service_id": service.id, "kind": service.kind})
+            continue
+        for route in manifest.routes:
+            for base_path in manifest.base_paths:
+                routes.append(
+                    {
+                        "service_id": service.id,
+                        "id": route.id,
+                        "method": route.method,
+                        "path": f"{base_path}{route.path}",
+                    }
+                )
+        for websocket in manifest.websockets:
+            for base_path in manifest.base_paths:
+                routes.append(
+                    {
+                        "service_id": service.id,
+                        "id": websocket.id,
+                        "method": "WEBSOCKET",
+                        "path": f"{base_path}{websocket.path}",
+                    }
+                )
+    return {"routes": routes}
+
+
+def _load_http_manifests(project: ProjectConfig) -> dict[str, HttpManifest]:
+    manifests: dict[str, HttpManifest] = {}
+    for service in project.services:
+        if service.kind == "http" and service.behavior:
+            manifests[service.id] = load_http_manifest(project.root, service.behavior)
+    return manifests
+
+
+def _load_cli_manifests(project: ProjectConfig) -> dict[str, CliManifest]:
+    manifests: dict[str, CliManifest] = {}
+    for service in project.services:
+        if service.kind == "cli" and service.behavior:
+            manifests[service.id] = load_cli_manifest(project.root, service.behavior)
+    return manifests
 
 
 def state_command(root: Path | None, command: str, args: Any) -> Any:
@@ -252,8 +454,18 @@ def models_command(root: Path | None, command: str) -> Any:
     profiles = load_profiles(project.root / str(project.raw["config"].get("model_dir", "models")))
     if command == "validate":
         return {"status": "valid", "count": len(profiles)}
-    return {"profiles": [{"id": profile.id, "provider": profile.provider_id, "model": profile.model_id,
-                           "capabilities": sorted(profile.capabilities), "digest": profile.digest} for profile in profiles]}
+    return {
+        "profiles": [
+            {
+                "id": profile.id,
+                "provider": profile.provider_id,
+                "model": profile.model_id,
+                "capabilities": sorted(profile.capabilities),
+                "digest": profile.digest,
+            }
+            for profile in profiles
+        ]
+    }
 
 
 def validate_contracts(project: ProjectConfig) -> list[str]:
@@ -263,17 +475,29 @@ def validate_contracts(project: ProjectConfig) -> list[str]:
             continue
         path = project.root / service.contract
         if not path.exists():
-            raise ContractError(ErrorContext("OMC-CONTRACT-001", f"Contract not found: {path}", source=str(path)))
+            raise ContractError(
+                ErrorContext("OMC-CONTRACT-001", f"Contract not found: {path}", source=str(path))
+            )
         suffix = path.suffix.lower()
         if suffix in {".yaml", ".yml", ".json"}:
             raw = load_document(path)
             if not isinstance(raw, dict):
-                raise ContractError(ErrorContext("OMC-CONTRACT-002", "Contract root must be an object", source=str(path)))
+                raise ContractError(
+                    ErrorContext(
+                        "OMC-CONTRACT-002", "Contract root must be an object", source=str(path)
+                    )
+                )
             if not any(key in raw for key in ("openapi", "asyncapi", "mcp", "$schema")):
-                raise ContractError(ErrorContext("OMC-CONTRACT-003", "Contract type/version is missing", source=str(path)))
+                raise ContractError(
+                    ErrorContext(
+                        "OMC-CONTRACT-003", "Contract type/version is missing", source=str(path)
+                    )
+                )
         elif suffix in {".graphql", ".proto", ".sql"}:
             if not path.read_text(encoding="utf-8").strip():
-                raise ContractError(ErrorContext("OMC-CONTRACT-004", "Contract is empty", source=str(path)))
+                raise ContractError(
+                    ErrorContext("OMC-CONTRACT-004", "Contract is empty", source=str(path))
+                )
         checked.append(str(path))
     return checked
 
@@ -281,9 +505,7 @@ def validate_contracts(project: ProjectConfig) -> list[str]:
 def _print(value: Any, output: str) -> None:
     if value is None:
         return
-    if output == "json":
-        print(json.dumps(value, indent=2, sort_keys=True, default=str))
-    elif isinstance(value, (dict, list)):
+    if output == "json" or isinstance(value, (dict, list)):
         print(json.dumps(value, indent=2, sort_keys=True, default=str))
     else:
         print(value)
@@ -296,11 +518,14 @@ def _print_error(error: OmniMockError, output: str) -> None:
     if output == "json":
         print(json.dumps({"error": payload}, sort_keys=True), file=sys.stderr)
     else:
-        print(f"{error.context.code}: {error.context.public_message}{f' ({error.context.source})' if error.context.source else ''}", file=sys.stderr)
+        print(
+            f"{error.context.code}: {error.context.public_message}{f' ({error.context.source})' if error.context.source else ''}",
+            file=sys.stderr,
+        )
 
 
 def _starter_config() -> str:
-    return '''schema_version: "1"
+    return """schema_version: "1"
 project:
   id: starter
   default_scenario: checkout
@@ -326,11 +551,11 @@ services:
     state_namespace: default
     listen:
       port: 8080
-'''
+"""
 
 
 def _starter_scenario() -> str:
-    return '''schema_version: "1"
+    return """schema_version: "1"
 id: checkout
 version: "1.0.0"
 seed: 1
@@ -338,4 +563,4 @@ initial_state:
   collections:
     orders: {}
 rules: []
-'''
+"""

@@ -60,6 +60,7 @@ def load_project(path: Path | None = None) -> ProjectConfig:
             state_namespace=str(service.get("state_namespace", "default")),
             listen=service.get("listen", {}), root=str(service["root"]) if "root" in service else None,
             contract=str(service["contract"]) if "contract" in service else None,
+            behavior=str(service["behavior"]) if "behavior" in service else None,
         ))
     scenario_name = str(raw["project"].get("default_scenario", "checkout"))
     scenario_path = root / str(raw["config"].get("scenario_dir", "scenarios")) / f"{scenario_name}.yaml"
@@ -125,6 +126,8 @@ def _validate_root(raw: Mapping[str, Any], path: Path) -> None:
             raise ConfigurationError(ErrorContext("OMC-CONFIG-016", "service.listen must be a mapping", source=str(path)))
         if isinstance(service.get("listen"), Mapping):
             _reject_unknown(service["listen"], {"host", "port", "path"}, "service.listen", path)
+        if "behavior" in service and (not isinstance(service["behavior"], str) or not service["behavior"].strip()):
+            raise ConfigurationError(ErrorContext("OMC-CONFIG-019", "service.behavior must be a non-empty path string", source=str(path)))
     runtime = raw["runtime"]
     if runtime.get("outbound_network", "deny") != "deny":
         raise ConfigurationError(ErrorContext("OMC-SECURITY-001", "Outbound network must remain deny by default", source=str(path)))

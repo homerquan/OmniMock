@@ -20,6 +20,10 @@ omnimock serve checkout
 The complete sample is in [`samples/commerce`](samples/commerce). To run it
 directly, execute `omnimock --root samples/commerce validate`.
 
+The [`samples/mirror_neuron`](samples/mirror_neuron) workspace provides
+manifest-driven Mirror Neuron HTTP, bidirectional WebSocket, and `mn` CLI mocks
+for developing OtterDesk without a live runtime or relay.
+
 The sample exposes a shared scenario through:
 
 - HTTP orders at `127.0.0.1:8081`;

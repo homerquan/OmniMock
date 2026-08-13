@@ -1,0 +1,166 @@
+{
+  "$schema": "../../schemas/cli-manifest.schema.json",
+  "schema_version": "1",
+  "kind": "cli",
+  "id": "mirror-neuron-cli",
+  "limits": {
+    "max_arg_count": 64,
+    "max_arg_length": 4096,
+    "max_stdout_bytes": 1000000,
+    "max_stderr_bytes": 100000
+  },
+  "commands": [
+    {
+      "id": "help",
+      "args": [],
+      "response": {
+        "exit_code": 0,
+        "stdout": "MirrorNeuron CLI mock\n\nCommands: blueprint, job, node, operation, runtime, model, resource, service\n"
+      }
+    },
+    {
+      "id": "version",
+      "args": ["--version"],
+      "response": {"exit_code": 0, "stdout": "MirrorNeuron CLI\nversion 0.0.0-omnimock\n"}
+    },
+    {
+      "id": "runtime.health.timeout",
+      "args": ["runtime", "health", "--json", "--timeout", "{timeout}"],
+      "response": {
+        "exit_code": 0,
+        "stdout": {
+          "version": 1,
+          "overall": "passing",
+          "checked_at": "{{clock.now}}",
+          "components": [
+            {"name": "core_grpc", "status": "passing", "target": "127.0.0.1:55051", "detail": "OmniMock runtime core fixture"},
+            {"name": "api", "status": "passing", "target": "http://127.0.0.1:54001/api/v1/health", "detail": {"status": "ok"}},
+            {"name": "web_ui", "status": "passing", "target": "http://127.0.0.1:55173/health", "detail": {"status": "ok"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "runtime.health",
+      "args": ["runtime", "health", "--json"],
+      "response": {
+        "exit_code": 0,
+        "stdout": {
+          "version": 1,
+          "overall": "passing",
+          "checked_at": "{{clock.now}}",
+          "components": [
+            {"name": "core_grpc", "status": "passing", "target": "127.0.0.1:55051", "detail": "OmniMock runtime core fixture"},
+            {"name": "api", "status": "passing", "target": "http://127.0.0.1:54001/api/v1/health", "detail": {"status": "ok"}},
+            {"name": "web_ui", "status": "passing", "target": "http://127.0.0.1:55173/health", "detail": {"status": "ok"}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "runtime.status",
+      "args": ["runtime", "status", "--json"],
+      "allow_extra_args": true,
+      "response": {
+        "exit_code": 0,
+        "stdout": {
+          "version": 1,
+          "overall": "passing",
+          "checked_at": "{{clock.now}}",
+          "endpoints": {"core_grpc": "127.0.0.1:55051", "api": "http://127.0.0.1:54001/api/v2", "web_ui": "http://127.0.0.1:55173"},
+          "nodes": {"total": 1, "healthy": 1},
+          "jobs": {"total": 1, "running": 1},
+          "shared_storage": {"host_root": "/tmp/omnimock-mirror-neuron", "runtime_root": "/workspace"}
+        }
+      }
+    },
+    {
+      "id": "runtime.doctor",
+      "args": ["runtime", "doctor", "--json"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"version": 1, "overall": "passing", "checked_at": "{{clock.now}}", "foundation": {"api": {"status": "passing"}, "core_grpc": {"status": "passing"}}}}
+    },
+    {
+      "id": "runtime.start",
+      "args": ["runtime", "start"],
+      "response": {"exit_code": 0, "stdout": "MirrorNeuron mock runtime is ready.\n"}
+    },
+    {
+      "id": "runtime.stop",
+      "args": ["runtime", "stop"],
+      "response": {"exit_code": 0, "stdout": "MirrorNeuron mock runtime stopped.\n"}
+    },
+    {
+      "id": "runtime.metrics",
+      "args": ["runtime", "metrics"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"jobs_running": 1, "nodes_healthy": 1, "mock": true}}
+    },
+    {
+      "id": "blueprint.list",
+      "args": ["blueprint", "list"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"blueprints": [{"id": "research_assistant", "name": "Research Assistant", "status": "installed"}]}}
+    },
+    {
+      "id": "blueprint.show",
+      "args": ["blueprint", "show", "{blueprint_id}"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"id": "{{arg.blueprint_id}}", "name": "Research Assistant", "status": "installed"}}
+    },
+    {
+      "id": "job.list",
+      "args": ["job", "list"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"jobs": [{"job_id": "mn-job-demo", "status": "running", "blueprint_id": "research_assistant"}]}}
+    },
+    {
+      "id": "job.status",
+      "args": ["job", "status", "{job_id}"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"job_id": "{{arg.job_id}}", "status": "running", "progress": 50}}
+    },
+    {
+      "id": "job.monitor",
+      "args": ["job", "monitor", "{job_id}"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"job_id": "{{arg.job_id}}", "status": "completed", "progress": 100}}
+    },
+    {
+      "id": "job.result",
+      "args": ["job", "result", "{job_id}"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"job_id": "{{arg.job_id}}", "status": "completed", "result": {"summary": "Deterministic OmniMock result"}}}
+    },
+    {
+      "id": "node.list",
+      "args": ["node", "list"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"nodes": [{"name": "mirror_neuron@localhost", "status": "healthy", "role": "controller"}]}}
+    },
+    {
+      "id": "operation.status",
+      "args": ["operation", "status", "{operation_id}"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"operation_id": "{{arg.operation_id}}", "status": "completed"}}
+    },
+    {
+      "id": "model.list",
+      "args": ["model", "list"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"models": [{"id": "mock-model", "status": "ready", "provider": "omnimock"}]}}
+    },
+    {
+      "id": "resource.status",
+      "args": ["resource", "status"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"cpu_percent": 18, "memory_percent": 34, "gpu_percent": 0}}
+    },
+    {
+      "id": "service.list",
+      "args": ["service", "list"],
+      "allow_extra_args": true,
+      "response": {"exit_code": 0, "stdout": {"services": [{"id": "mn-api", "status": "running", "port": 54001}]}}
+    }
+  ]
+}
