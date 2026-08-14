@@ -11,8 +11,12 @@ from omnimock.domain.http import (
     CorsDefinition,
     HttpManifest,
     HttpManifestLimits,
+    HttpRequestDefinition,
     HttpResponseDefinition,
     HttpRouteDefinition,
+    ProblemDetailsDefinition,
+    SseDefinition,
+    SseEventDefinition,
     WebSocketDefinition,
     WebSocketInteractionDefinition,
 )
@@ -21,6 +25,7 @@ from omnimock.infrastructure.config.yaml_loader import load_document
 
 _METHODS = {"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}
 _PATH_PARAMETER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::path)?\}")
+_PROBLEM_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 
 
 def load_http_manifest(project_root: Path, configured_path: str) -> HttpManifest:
@@ -37,6 +42,8 @@ def load_http_manifest(project_root: Path, configured_path: str) -> HttpManifest
             "base_paths",
             "limits",
             "cors",
+            "default_headers",
+            "problem_details",
             "routes",
             "websockets",
         },
@@ -53,9 +60,20 @@ def load_http_manifest(project_root: Path, configured_path: str) -> HttpManifest
     base_paths = _base_paths(raw.get("base_paths", [""]), path)
     limits = _limits(raw.get("limits", {}), path)
     cors = _cors(raw.get("cors", {}), path)
+    default_headers = _headers(raw.get("default_headers", {}), "default_headers", path)
+    problem_details = _problem_details(raw.get("problem_details", {}), path)
     routes = _routes(raw.get("routes"), path, limits)
     websockets = _websockets(raw.get("websockets", []), path, limits)
-    return HttpManifest(manifest_id, base_paths, routes, websockets, limits, cors)
+    return HttpManifest(
+        manifest_id,
+        base_paths,
+        routes,
+        websockets,
+        limits,
+        cors,
+        default_headers,
+        problem_details,
+    )
 
 
 def _project_file(project_root: Path, configured_path: str) -> Path:
@@ -103,6 +121,7 @@ def _limits(value: object, path: Path) -> HttpManifestLimits:
             "max_websocket_message_bytes",
             "max_websocket_interactions",
             "websocket_idle_timeout_ms",
+            "max_idempotency_records",
         },
         "limits",
         path,
@@ -145,8 +164,21 @@ def _limits(value: object, path: Path) -> HttpManifestLimits:
         "websocket_idle_timeout_ms",
         path,
     )
+    idempotency_records = _bounded_int(
+        values.get("max_idempotency_records", 1_000),
+        0,
+        100_000,
+        "max_idempotency_records",
+        path,
+    )
     return HttpManifestLimits(
-        request, response, messages, message_bytes, interactions, idle_timeout
+        request,
+        response,
+        messages,
+        message_bytes,
+        interactions,
+        idle_timeout,
+        idempotency_records,
     )
 
 
@@ -176,6 +208,63 @@ def _cors(value: object, path: Path) -> CorsDefinition:
     return CorsDefinition(origins, headers, methods)
 
 
+def _headers(value: object, label: str, path: Path) -> dict[str, str]:
+    raw = _mapping(
+        value,
+        "OMC-HTTP-MANIFEST-018",
+        f"{label} must be a mapping",
+        path,
+    )
+    headers: dict[str, str] = {}
+    for key, item in raw.items():
+        if not isinstance(item, str) or not _safe_header(key) or not _safe_header(item):
+            raise _error(
+                "OMC-HTTP-MANIFEST-018", f"{label} must contain safe strings", path
+            )
+        headers[key] = item
+    return headers
+
+
+def _problem_details(value: object, path: Path) -> ProblemDetailsDefinition:
+    values = _mapping(
+        value,
+        "OMC-HTTP-MANIFEST-053",
+        "problem_details must be a mapping",
+        path,
+    )
+    _reject_unknown(values, {"type_base", "codes"}, "problem_details", path)
+    type_base = values.get("type_base", "about:blank")
+    if not isinstance(type_base, str) or not _safe_header(type_base):
+        raise _error(
+            "OMC-HTTP-MANIFEST-054", "problem_details.type_base is invalid", path
+        )
+    raw_codes = _mapping(
+        values.get("codes", {}),
+        "OMC-HTTP-MANIFEST-055",
+        "problem_details.codes must be a mapping",
+        path,
+    )
+    codes: dict[int, str] = {}
+    for raw_status, raw_code in raw_codes.items():
+        try:
+            status = int(raw_status)
+        except ValueError as exc:
+            raise _error(
+                "OMC-HTTP-MANIFEST-055", "Problem status keys must be integers", path
+            ) from exc
+        if (
+            status < 400
+            or status > 599
+            or not isinstance(raw_code, str)
+            or _PROBLEM_CODE.fullmatch(raw_code) is None
+        ):
+            raise _error(
+                "OMC-HTTP-MANIFEST-055", "Problem codes or status keys are invalid", path
+            )
+        codes[status] = raw_code
+    return ProblemDetailsDefinition(type_base, codes)
+
+
 def _routes(
     value: object, path: Path, limits: HttpManifestLimits
 ) -> tuple[HttpRouteDefinition, ...]:
@@ -187,7 +276,7 @@ def _routes(
     ids: set[str] = set()
     for raw_value in items:
         raw = _mapping(raw_value, "OMC-HTTP-MANIFEST-013", "Every route must be a mapping", path)
-        _reject_unknown(raw, {"id", "method", "path", "response"}, "route", path)
+        _reject_unknown(raw, {"id", "method", "path", "request", "response"}, "route", path)
         route_id = str(raw.get("id", "")).strip()
         method = str(raw.get("method", "")).upper()
         route_path = str(raw.get("path", ""))
@@ -200,7 +289,8 @@ def _routes(
         if identity in identities:
             raise _error("OMC-HTTP-MANIFEST-016", f"Duplicate route: {method} {route_path}", path)
         response = _response(raw.get("response"), path, limits)
-        routes.append(HttpRouteDefinition(route_id, method, route_path, response))
+        request = _request(raw.get("request", {}), path)
+        routes.append(HttpRouteDefinition(route_id, method, route_path, response, request))
         ids.add(route_id)
         identities.add(identity)
     return tuple(routes)
@@ -208,21 +298,14 @@ def _routes(
 
 def _response(value: object, path: Path, limits: HttpManifestLimits) -> HttpResponseDefinition:
     values = _mapping(value, "OMC-HTTP-MANIFEST-017", "route.response must be a mapping", path)
-    _reject_unknown(values, {"status", "headers", "content_type", "body"}, "route.response", path)
-    status = _bounded_int(values.get("status", 200), 100, 599, "route.response.status", path)
-    raw_headers = _mapping(
-        values.get("headers", {}),
-        "OMC-HTTP-MANIFEST-018",
-        "route.response.headers must be a mapping",
+    _reject_unknown(
+        values,
+        {"status", "headers", "content_type", "body", "sse"},
+        "route.response",
         path,
     )
-    headers: dict[str, str] = {}
-    for key, item in raw_headers.items():
-        if not isinstance(item, str) or not _safe_header(key) or not _safe_header(item):
-            raise _error(
-                "OMC-HTTP-MANIFEST-018", "route.response.headers must contain strings", path
-            )
-        headers[key] = item
+    status = _bounded_int(values.get("status", 200), 100, 599, "route.response.status", path)
+    headers = _headers(values.get("headers", {}), "route.response.headers", path)
     body = _json_value(values.get("body"), path)
     encoded_size = len(_json_bytes(body))
     if encoded_size > limits.max_response_body_bytes:
@@ -232,7 +315,99 @@ def _response(value: object, path: Path, limits: HttpManifestLimits) -> HttpResp
     content_type_value = values.get("content_type", "application/json")
     if not isinstance(content_type_value, str) or not _safe_header(content_type_value):
         raise _error("OMC-HTTP-MANIFEST-029", "route.response.content_type is invalid", path)
-    return HttpResponseDefinition(status, body, headers, content_type_value)
+    sse = _sse(values.get("sse"), path, limits)
+    if sse is not None and content_type_value != "text/event-stream":
+        raise _error(
+            "OMC-HTTP-MANIFEST-041",
+            "route.response.sse requires content_type text/event-stream",
+            path,
+        )
+    return HttpResponseDefinition(status, body, headers, content_type_value, sse)
+
+
+def _request(value: object, path: Path) -> HttpRequestDefinition:
+    values = _mapping(value, "OMC-HTTP-MANIFEST-042", "route.request must be a mapping", path)
+    _reject_unknown(values, {"if_match", "idempotent"}, "route.request", path)
+    if_match = values.get("if_match")
+    if if_match is not None and (
+        not isinstance(if_match, str) or not _safe_header(if_match)
+    ):
+        raise _error("OMC-HTTP-MANIFEST-043", "route.request.if_match is invalid", path)
+    idempotent = values.get("idempotent", False)
+    if not isinstance(idempotent, bool):
+        raise _error(
+            "OMC-HTTP-MANIFEST-044", "route.request.idempotent must be a boolean", path
+        )
+    return HttpRequestDefinition(if_match, idempotent)
+
+
+def _sse(value: object, path: Path, limits: HttpManifestLimits) -> SseDefinition | None:
+    if value is None:
+        return None
+    values = _mapping(value, "OMC-HTTP-MANIFEST-045", "route.response.sse must be a mapping", path)
+    _reject_unknown(
+        values,
+        {"events", "heartbeat", "event_interval_ms", "require_numeric_last_event_id"},
+        "route.response.sse",
+        path,
+    )
+    items = _list(values.get("events"))
+    if items is None or not items or len(items) > 1_000:
+        raise _error(
+            "OMC-HTTP-MANIFEST-046",
+            "route.response.sse.events must contain between 1 and 1000 events",
+            path,
+        )
+    events: list[SseEventDefinition] = []
+    event_ids: set[str] = set()
+    total_size = 0
+    for item in items:
+        raw = _mapping(item, "OMC-HTTP-MANIFEST-047", "Every SSE event must be a mapping", path)
+        _reject_unknown(raw, {"id", "event", "data"}, "SSE event", path)
+        event_id = raw.get("id")
+        event_name = raw.get("event")
+        if (
+            not isinstance(event_id, str)
+            or not event_id
+            or event_id in event_ids
+            or not _safe_header(event_id)
+        ):
+            raise _error("OMC-HTTP-MANIFEST-048", "SSE event ids must be unique strings", path)
+        if not isinstance(event_name, str) or not _safe_header(event_name):
+            raise _error("OMC-HTTP-MANIFEST-049", "SSE event names must be safe strings", path)
+        data = _json_value(raw.get("data"), path)
+        total_size += len(_json_bytes(data)) + len(event_id.encode()) + len(event_name.encode())
+        events.append(SseEventDefinition(event_id, event_name, data))
+        event_ids.add(event_id)
+    if total_size > limits.max_response_body_bytes:
+        raise _error(
+            "OMC-HTTP-MANIFEST-050", "SSE events exceed max_response_body_bytes", path
+        )
+    heartbeat = values.get("heartbeat", True)
+    numeric_ids = values.get("require_numeric_last_event_id", False)
+    if not isinstance(heartbeat, bool) or not isinstance(numeric_ids, bool):
+        raise _error(
+            "OMC-HTTP-MANIFEST-051", "SSE boolean options must be booleans", path
+        )
+    if numeric_ids:
+        try:
+            numeric = [int(event.id) for event in events]
+        except ValueError as exc:
+            raise _error(
+                "OMC-HTTP-MANIFEST-052", "SSE event ids must be integers", path
+            ) from exc
+        if any(value < 0 for value in numeric) or numeric != sorted(numeric):
+            raise _error(
+                "OMC-HTTP-MANIFEST-052", "Numeric SSE event ids must be nonnegative and ordered", path
+            )
+    interval = _bounded_int(
+        values.get("event_interval_ms", 0),
+        0,
+        10_000,
+        "route.response.sse.event_interval_ms",
+        path,
+    )
+    return SseDefinition(tuple(events), heartbeat, interval, numeric_ids)
 
 
 def _websockets(

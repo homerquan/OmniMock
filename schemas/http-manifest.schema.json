@@ -23,7 +23,8 @@
         "max_websocket_messages": {"type": "integer", "minimum": 0, "maximum": 1000},
         "max_websocket_message_bytes": {"type": "integer", "minimum": 1, "maximum": 10000000},
         "max_websocket_interactions": {"type": "integer", "minimum": 0, "maximum": 1000},
-        "websocket_idle_timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000}
+        "websocket_idle_timeout_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+        "max_idempotency_records": {"type": "integer", "minimum": 0, "maximum": 100000}
       },
       "additionalProperties": false
     },
@@ -33,6 +34,24 @@
         "allow_origins": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "allow_headers": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "allow_methods": {"type": "array", "items": {"enum": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]}}
+      },
+      "additionalProperties": false
+    },
+    "default_headers": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "problem_details": {
+      "type": "object",
+      "properties": {
+        "type_base": {"type": "string", "minLength": 1},
+        "codes": {
+          "type": "object",
+          "patternProperties": {
+            "^[45][0-9][0-9]$": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"}
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -46,6 +65,14 @@
           "id": {"type": "string", "minLength": 1},
           "method": {"enum": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]},
           "path": {"type": "string", "pattern": "^/"},
+          "request": {
+            "type": "object",
+            "properties": {
+              "if_match": {"type": "string", "minLength": 1},
+              "idempotent": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          },
           "response": {
             "type": "object",
             "required": ["status", "body"],
@@ -53,7 +80,32 @@
               "status": {"type": "integer", "minimum": 100, "maximum": 599},
               "headers": {"type": "object", "additionalProperties": {"type": "string"}},
               "content_type": {"type": "string", "minLength": 1},
-              "body": true
+              "body": true,
+              "sse": {
+                "type": "object",
+                "required": ["events"],
+                "properties": {
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "required": ["id", "event", "data"],
+                      "properties": {
+                        "id": {"type": "string", "minLength": 1},
+                        "event": {"type": "string", "minLength": 1},
+                        "data": true
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "heartbeat": {"type": "boolean"},
+                  "event_interval_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+                  "require_numeric_last_event_id": {"type": "boolean"}
+                },
+                "additionalProperties": false
+              }
             },
             "additionalProperties": false
           }

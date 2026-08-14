@@ -11,11 +11,33 @@ _PARAMETER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::(path))?\}")
 
 
 @dataclass(frozen=True, slots=True)
+class SseEventDefinition:
+    id: str
+    event: str
+    data: JsonValue
+
+
+@dataclass(frozen=True, slots=True)
+class SseDefinition:
+    events: tuple[SseEventDefinition, ...]
+    heartbeat: bool = True
+    event_interval_ms: int = 0
+    require_numeric_last_event_id: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class HttpResponseDefinition:
     status: int
     body: JsonValue
     headers: Mapping[str, str] = field(default_factory=lambda: _empty_headers())
     content_type: str = "application/json"
+    sse: SseDefinition | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HttpRequestDefinition:
+    if_match: str | None = None
+    idempotent: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +46,7 @@ class HttpRouteDefinition:
     method: str
     path: str
     response: HttpResponseDefinition
+    request: HttpRequestDefinition = HttpRequestDefinition()
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +77,7 @@ class HttpManifestLimits:
     max_websocket_message_bytes: int = 1_000_000
     max_websocket_interactions: int = 100
     websocket_idle_timeout_ms: int = 5_000
+    max_idempotency_records: int = 1_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +88,12 @@ class CorsDefinition:
 
 
 @dataclass(frozen=True, slots=True)
+class ProblemDetailsDefinition:
+    type_base: str = "about:blank"
+    codes: Mapping[int, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class HttpManifest:
     id: str
     base_paths: tuple[str, ...]
@@ -71,6 +101,8 @@ class HttpManifest:
     websockets: tuple[WebSocketDefinition, ...] = ()
     limits: HttpManifestLimits = HttpManifestLimits()
     cors: CorsDefinition = CorsDefinition()
+    default_headers: Mapping[str, str] = field(default_factory=lambda: _empty_headers())
+    problem_details: ProblemDetailsDefinition = ProblemDetailsDefinition()
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,3 +177,4 @@ def _match_path(template: str, path: str) -> dict[str, str] | None:
 
 def _empty_headers() -> Mapping[str, str]:
     return {}
+
